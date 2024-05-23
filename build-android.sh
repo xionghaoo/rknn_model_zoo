@@ -1,5 +1,7 @@
 #!/bin/bash
 
+export ANDROID_NDK_PATH=/home/rabbit/Android/android-ndk-r18b
+
 set -e
 
 if [[ -z ${ANDROID_NDK_PATH} ]];then

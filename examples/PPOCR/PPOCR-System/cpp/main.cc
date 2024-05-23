@@ -19,11 +19,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <vector>
 
 #include "ppocr_system.h"
 #include "image_utils.h"
 #include "image_drawing.h"
 #include "file_utils.h"
+#include "nlohmann/json.hpp"
 
 #define INDENT "    "
 #define THRESHOLD 0.3                                       // pixel score threshold
@@ -33,11 +35,16 @@
 #define DB_BOX_TYPE "poly"                                // poly or quad. poly for returning polygon box; quad for returning rectangle box
 #define DB_UNCLIP_RATIO 1.5                          // unclip ratio for poly type
 
+using json = nlohmann::json;
+
 /*-------------------------------------------
                   Main Function
 -------------------------------------------*/
 int main(int argc, char** argv)
 {
+    // 测试
+    // cd /data/rknn_PPOCR-System_demo && export LD_LIBRARY_PATH=./lib && ./rknn_ppocr_system_demo model/ppocrv4_det.rknn model/ppocrv4_rec.rknn model/test.jpg
+    //
     if (argc != 4) {
         printf("%s <det_model_path> <rec_model_path> <image_path>\n", argv[0]);
         return -1;
@@ -84,27 +91,50 @@ int main(int argc, char** argv)
     ret = inference_ppocr_system_model(&rknn_app_ctx, &src_image, &params, &results);
     if (ret != 0) {
         printf("inference_ppocr_system_model fail! ret=%d\n", ret);
-        goto out;
+        ret = release_ppocr_model(&rknn_app_ctx.det_context);
+        if (ret != 0) {
+            printf("release_ppocr_model det_context fail! ret=%d\n", ret);
+        }
+        ret = release_ppocr_model(&rknn_app_ctx.rec_context);
+        if (ret != 0) {
+            printf("release_ppocr_model rec_context fail! ret=%d\n", ret);
+        }
+
+        if (src_image.virt_addr != NULL) {
+            free(src_image.virt_addr);
+        }
     }
 
+    json j;
+    j["count"] = results.count;
+    j["text_result"] = json::array();
+
     // Draw Objects
-    printf("DRAWING OBJECT\n");
+//    printf("DRAWING OBJECT\n");
     for (int i = 0; i < results.count; i++)
     {
-        printf("[%d] @ [(%d, %d), (%d, %d), (%d, %d), (%d, %d)]\n", i,
-            results.text_result[i].box.left_top.x, results.text_result[i].box.left_top.y, results.text_result[i].box.right_top.x, results.text_result[i].box.right_top.y, 
-            results.text_result[i].box.right_bottom.x, results.text_result[i].box.right_bottom.y, results.text_result[i].box.left_bottom.x, results.text_result[i].box.left_bottom.y);
+//        printf("[%d] @ [(%d, %d), (%d, %d), (%d, %d), (%d, %d)]\n", i,
+//            results.text_result[i].box.left_top.x, results.text_result[i].box.left_top.y, results.text_result[i].box.right_top.x, results.text_result[i].box.right_top.y,
+//            results.text_result[i].box.right_bottom.x, results.text_result[i].box.right_bottom.y, results.text_result[i].box.left_bottom.x, results.text_result[i].box.left_bottom.y);
         //draw Quadrangle box
         draw_line(&src_image, results.text_result[i].box.left_top.x, results.text_result[i].box.left_top.y, results.text_result[i].box.right_top.x, results.text_result[i].box.right_top.y, 255, 2);
         draw_line(&src_image, results.text_result[i].box.right_top.x, results.text_result[i].box.right_top.y, results.text_result[i].box.right_bottom.x, results.text_result[i].box.right_bottom.y, 255, 2);
         draw_line(&src_image, results.text_result[i].box.right_bottom.x, results.text_result[i].box.right_bottom.y, results.text_result[i].box.left_bottom.x, results.text_result[i].box.left_bottom.y, 255, 2);
         draw_line(&src_image, results.text_result[i].box.left_bottom.x, results.text_result[i].box.left_bottom.y, results.text_result[i].box.left_top.x, results.text_result[i].box.left_top.y, 255, 2);
         printf("regconize result: %s, score=%f\n", results.text_result[i].text.str, results.text_result[i].text.score);
-    }
-    printf("    SAVE TO ./out.jpg\n");
-    write_image("./out.jpg", &src_image);
 
-out:
+        json t_result;
+        json text;
+        text["str"] = results.text_result[i].text.str;
+        text["score"] = results.text_result[i].text.score;
+        t_result["text"] = text;
+        j["text_result"].push_back(t_result);
+    }
+    printf("<!%s!>", j.dump().c_str());
+//    printf("    SAVE TO ./out.jpg\n");
+//    write_image("./out.jpg", &src_image);
+
+//out:
     ret = release_ppocr_model(&rknn_app_ctx.det_context);
     if (ret != 0) {
         printf("release_ppocr_model det_context fail! ret=%d\n", ret);
